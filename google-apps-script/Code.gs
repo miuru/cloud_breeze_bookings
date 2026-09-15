@@ -9,11 +9,9 @@
  *    "Anyone". Copy the deployment URL into the website if it changes.
  */
 
-const SPREADSHEET_ID = 'PASTE_YOUR_GOOGLE_SHEET_ID_HERE';
+const SPREADSHEET_ID = '1gdMxVS-XF-Om8Kr-egrJR9oVPlby9tt-MSRiR3DYhFM';
 const SHEET_NAME = 'Bookings';
 const API_KEY = 'miuru97@7124';
-const BOOKINGS_CACHE_KEY = 'cloud_breeze_bookings_v1';
-const BOOKINGS_CACHE_SECONDS = 300;
 
 const HEADERS = [
   'ID',
@@ -57,13 +55,11 @@ function doPost(e) {
       const bookings = JSON.parse(data.bookings || '[]');
       if (!Array.isArray(bookings)) throw new Error('Bookings must be an array.');
       replaceAllBookings(bookings);
-      invalidateBookingsCache();
       return jsonResponse({ status: 'ok', message: 'All bookings replaced.', count: bookings.length });
     }
 
     if (data.action === 'clearAllBookings') {
       replaceAllBookings([]);
-      invalidateBookingsCache();
       return jsonResponse({ status: 'ok', message: 'All bookings cleared.' });
     }
 
@@ -74,7 +70,6 @@ function doPost(e) {
         return jsonResponse({ status: 'ok', message: 'Booking was already absent.' });
       }
       sheet.deleteRow(existingRow);
-      invalidateBookingsCache();
       return jsonResponse({ status: 'ok', message: 'Booking deleted.' });
     }
 
@@ -103,12 +98,10 @@ function doPost(e) {
     const existingRow = findBookingRow(sheet, String(booking.id || ''));
     if (existingRow) {
       sheet.getRange(existingRow, 1, 1, HEADERS.length).setValues([row]);
-      invalidateBookingsCache();
       return jsonResponse({ status: 'ok', message: 'Booking updated.', row: existingRow });
     }
 
     sheet.appendRow(row);
-    invalidateBookingsCache();
     return jsonResponse({ status: 'ok', message: 'Booking added.', row: sheet.getLastRow() });
   } catch (error) {
     console.error(error);
@@ -141,14 +134,10 @@ function findBookingRow(sheet, bookingId) {
 }
 
 function getAllBookings() {
-  const cache = CacheService.getScriptCache();
-  const cached = cache.get(BOOKINGS_CACHE_KEY);
-  if (cached) return JSON.parse(cached);
-
   const sheet = getBookingsSheet();
   if (sheet.getLastRow() < 2) return [];
 
-  const bookings = sheet.getRange(2, 1, sheet.getLastRow() - 1, HEADERS.length).getValues()
+  return sheet.getRange(2, 1, sheet.getLastRow() - 1, HEADERS.length).getValues()
     .filter(row => row[0] !== '')
     .map(row => ({
       id: Number(row[0]) || row[0],
@@ -163,15 +152,6 @@ function getAllBookings() {
       dateAdded: formatSheetTimestamp(row[9]),
       lastModified: formatSheetTimestamp(row[10])
     }));
-
-  const serialized = JSON.stringify(bookings);
-  // Apps Script cache entries are limited to 100 KB, so skip caching very large lists.
-  if (serialized.length <= 100000) cache.put(BOOKINGS_CACHE_KEY, serialized, BOOKINGS_CACHE_SECONDS);
-  return bookings;
-}
-
-function invalidateBookingsCache() {
-  CacheService.getScriptCache().remove(BOOKINGS_CACHE_KEY);
 }
 
 function replaceAllBookings(bookings) {
